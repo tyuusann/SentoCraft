@@ -1,14 +1,13 @@
 package dev.bluerotor.sentocraft;
 
 import com.mojang.logging.LogUtils;
+import dev.bluerotor.sentocraft.registry.ModBlockEntities;
 import dev.bluerotor.sentocraft.registry.ModBlocks;
 import dev.bluerotor.sentocraft.registry.ModCreativeTabs;
 import dev.bluerotor.sentocraft.registry.ModItems;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import org.slf4j.Logger;
@@ -19,25 +18,21 @@ public class SentoCraft {
     public static final String MOD_ID = "sentocraft";
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    public SentoCraft(IEventBus modEventBus, ModContainer modContainer) {
+    public SentoCraft(IEventBus modEventBus) {
 
-        // MODの共通初期化イベント
-        modEventBus.addListener(this::commonSetup);
-
-        // クリエイティブタブへのアイテム追加イベント
-        modEventBus.addListener(this::addCreative);
-
-        // 各種登録
+        // レジストリ登録
         ModBlocks.register(modEventBus);
         ModItems.register(modEventBus);
+        ModBlockEntities.register(modEventBus);
         ModCreativeTabs.register(modEventBus);
 
-        // コンフィグ登録
-        modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        // イベント登録
+        modEventBus.addListener(this::commonSetup);
+        modEventBus.addListener(this::addCreative);
     }
 
-    private void commonSetup(FMLCommonSetupEvent event) {
-        LOGGER.info("SentoCraft initialized.");
+    private void commonSetup(final FMLCommonSetupEvent event) {
+        // 今後の初期化処理
     }
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {

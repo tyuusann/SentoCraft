@@ -1,27 +1,31 @@
 package dev.bluerotor.sentocraft.registry;
 
 import dev.bluerotor.sentocraft.SentoCraft;
-import net.minecraft.world.level.block.Block;
+import dev.bluerotor.sentocraft.block.TankBlock;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
-public class ModBlocks {
+public final class ModBlocks {
 
     public static final DeferredRegister.Blocks BLOCKS =
             DeferredRegister.createBlocks(SentoCraft.MOD_ID);
 
-    // Tank
-    public static final DeferredBlock<Block> TANK =
-            BLOCKS.registerSimpleBlock(
+    public static final DeferredBlock<TankBlock> TANK =
+            BLOCKS.register(
                     "tank",
-                    BlockBehaviour.Properties.of()
-                            .mapColor(MapColor.METAL)
-                            .strength(3.5F)
-                            .requiresCorrectToolForDrops()
+                    () -> new TankBlock(
+                            BlockBehaviour.Properties.of()
+                                    .mapColor(MapColor.METAL)
+                                    .strength(3.5F)
+                                    .requiresCorrectToolForDrops()
+                    )
             );
+
+    private ModBlocks() {
+    }
 
     public static void register(IEventBus eventBus) {
         BLOCKS.register(eventBus);
