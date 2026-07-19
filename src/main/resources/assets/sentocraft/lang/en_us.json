@@ -1,5 +1,3 @@
 {
-  "itemGroup.sentocraft": "Sento Craft",
-  "block.sentocraft.example_block": "Example Block",
-  "item.sentocraft.example_item": "Example Item"
+  "block.sentocraft.tank": "Tank"
 }
