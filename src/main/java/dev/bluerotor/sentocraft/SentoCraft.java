@@ -5,6 +5,7 @@ import dev.bluerotor.sentocraft.registry.ModBlockEntities;
 import dev.bluerotor.sentocraft.registry.ModBlocks;
 import dev.bluerotor.sentocraft.registry.ModCreativeTabs;
 import dev.bluerotor.sentocraft.registry.ModItems;
+import dev.bluerotor.sentocraft.registry.ModMenus;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
@@ -24,6 +25,7 @@ public class SentoCraft {
         ModBlocks.register(modEventBus);
         ModItems.register(modEventBus);
         ModBlockEntities.register(modEventBus);
+        ModMenus.register(modEventBus);
         ModCreativeTabs.register(modEventBus);
 
         // イベント登録
