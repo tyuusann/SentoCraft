@@ -1,3 +1,6 @@
 {
-  "block.sentocraft.tank": "タンク"
+  "block.sentocraft.tank": "タンク",
+  "menu.sentocraft.tank": "タンク",
+  "gui.sentocraft.water": "水",
+  "gui.sentocraft.hot_water": "お湯"
 }

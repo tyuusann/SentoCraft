@@ -2,10 +2,15 @@ package dev.bluerotor.sentocraft.block;
 
 import com.mojang.serialization.MapCodec;
 import dev.bluerotor.sentocraft.blockentity.TankBlockEntity;
+import dev.bluerotor.sentocraft.menu.TankMenu;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.RenderShape;
@@ -42,6 +47,30 @@ public class TankBlock extends BaseEntityBlock {
     }
 
     @Override
+    public @Nullable MenuProvider getMenuProvider(
+            BlockState state,
+            Level level,
+            BlockPos pos
+    ) {
+        BlockEntity blockEntity = level.getBlockEntity(pos);
+
+        if (!(blockEntity instanceof TankBlockEntity tankBlockEntity)) {
+            return null;
+        }
+
+        return new SimpleMenuProvider(
+                (containerId, playerInventory, player) ->
+                        new TankMenu(
+                                containerId,
+                                playerInventory,
+                                tankBlockEntity.getContainerData(),
+                                ContainerLevelAccess.create(level, pos)
+                        ),
+                Component.translatable("menu.sentocraft.tank")
+        );
+    }
+
+    @Override
     protected InteractionResult useWithoutItem(
             BlockState state,
             Level level,
@@ -49,22 +78,14 @@ public class TankBlock extends BaseEntityBlock {
             Player player,
             BlockHitResult hitResult
     ) {
-        if (!level.isClientSide()) {
-            BlockEntity blockEntity = level.getBlockEntity(pos);
+        if (!level.isClientSide()
+                && player instanceof ServerPlayer serverPlayer) {
 
-            if (blockEntity instanceof TankBlockEntity tankBlockEntity) {
-                tankBlockEntity.addWater(1000);
+            MenuProvider menuProvider =
+                    state.getMenuProvider(level, pos);
 
-                player.displayClientMessage(
-                        Component.literal(
-                                "水量: "
-                                        + tankBlockEntity.getWaterAmount()
-                                        + " / "
-                                        + TankBlockEntity.MAX_FLUID
-                                        + " mB"
-                        ),
-                        true
-                );
+            if (menuProvider != null) {
+                serverPlayer.openMenu(menuProvider);
             }
         }
 
