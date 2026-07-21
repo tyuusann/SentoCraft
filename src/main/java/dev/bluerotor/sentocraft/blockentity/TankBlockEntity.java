@@ -78,6 +78,14 @@ public class TankBlockEntity extends BlockEntity {
         setHotWaterAmount(hotWaterAmount + amount);
     }
 
+    public void removeWater(int amount) {
+        setWaterAmount(waterAmount - amount);
+    }
+
+    public void removeHotWater(int amount) {
+        setHotWaterAmount(hotWaterAmount - amount);
+    }
+
     private static int clampFluidAmount(int amount) {
         return Math.max(0, Math.min(MAX_FLUID, amount));
     }

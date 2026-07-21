@@ -21,6 +21,14 @@ import net.neoforged.neoforge.items.ItemStackHandler;
 
 public class BoilerBlockEntity extends BlockEntity implements MenuProvider {
 
+    /** 1秒ごとの変換量 */
+    private static final int HEAT_AMOUNT = 200;
+
+    /** 20tick = 1秒 */
+    public static final int CONVERT_INTERVAL = 20;
+
+    private int convertTimer = 0;
+
     private final ItemStackHandler inventory = new ItemStackHandler(1) {
 
         @Override
@@ -66,22 +74,17 @@ public class BoilerBlockEntity extends BlockEntity implements MenuProvider {
         }
     };
 
-    /** 水→お湯変換間隔（20tick = 1秒） */
-    public static final int CONVERT_INTERVAL = 20;
-
     public BoilerBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.BOILER.get(), pos, state);
     }
 
-    /**
-     * 毎tick実行
-     */
     public static void tick(
             Level level,
             BlockPos pos,
             BlockState state,
             BoilerBlockEntity boiler
     ) {
+
         if (level.isClientSide) {
             return;
         }
@@ -95,13 +98,11 @@ public class BoilerBlockEntity extends BlockEntity implements MenuProvider {
 
         if (boiler.burnTime <= 0) {
 
-            ItemStack fuel =
-                    boiler.inventory.getStackInSlot(0);
+            ItemStack fuel = boiler.inventory.getStackInSlot(0);
 
             if (!fuel.isEmpty()) {
 
-                int burn =
-                        fuel.getBurnTime(null);
+                int burn = fuel.getBurnTime(null);
 
                 if (burn > 0) {
 
@@ -117,6 +118,35 @@ public class BoilerBlockEntity extends BlockEntity implements MenuProvider {
                     changed = true;
                 }
             }
+        }
+
+        if (boiler.isLit()) {
+
+            boiler.convertTimer++;
+
+            if (boiler.convertTimer >= CONVERT_INTERVAL) {
+
+                boiler.convertTimer = 0;
+
+                BlockEntity blockEntity =
+                        level.getBlockEntity(pos.above());
+
+                if (blockEntity instanceof TankBlockEntity tank) {
+
+                    if (tank.getWaterAmount() >= HEAT_AMOUNT
+                            && tank.getHotWaterAmount()
+                            <= TankBlockEntity.MAX_FLUID - HEAT_AMOUNT) {
+
+                        tank.removeWater(HEAT_AMOUNT);
+                        tank.addHotWater(HEAT_AMOUNT);
+
+                        changed = true;
+                    }
+                }
+            }
+        } else {
+
+            boiler.convertTimer = 0;
         }
 
         if (changed) {
@@ -179,6 +209,7 @@ public class BoilerBlockEntity extends BlockEntity implements MenuProvider {
 
         tag.putInt("BurnTime", burnTime);
         tag.putInt("MaxBurnTime", maxBurnTime);
+        tag.putInt("ConvertTimer", convertTimer);
     }
 
     @Override
@@ -195,5 +226,6 @@ public class BoilerBlockEntity extends BlockEntity implements MenuProvider {
 
         burnTime = tag.getInt("BurnTime");
         maxBurnTime = tag.getInt("MaxBurnTime");
+        convertTimer = tag.getInt("ConvertTimer");
     }
 }

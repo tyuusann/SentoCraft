@@ -6,11 +6,15 @@ import dev.bluerotor.sentocraft.menu.TankMenu;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ContainerLevelAccess;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.RenderShape;
@@ -23,6 +27,8 @@ public class TankBlock extends BaseEntityBlock {
 
     public static final MapCodec<TankBlock> CODEC =
             simpleCodec(TankBlock::new);
+
+    private static final int BUCKET_AMOUNT = 1000;
 
     public TankBlock(Properties properties) {
         super(properties);
@@ -68,6 +74,48 @@ public class TankBlock extends BaseEntityBlock {
                         ),
                 Component.translatable("menu.sentocraft.tank")
         );
+    }
+
+    @Override
+    protected ItemInteractionResult useItemOn(
+            ItemStack stack,
+            BlockState state,
+            Level level,
+            BlockPos pos,
+            Player player,
+            InteractionHand hand,
+            BlockHitResult hitResult
+    ) {
+        if (!stack.is(Items.WATER_BUCKET)) {
+            return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        }
+
+        BlockEntity blockEntity = level.getBlockEntity(pos);
+
+        if (!(blockEntity instanceof TankBlockEntity tankBlockEntity)) {
+            return ItemInteractionResult.FAIL;
+        }
+
+        int availableSpace =
+                TankBlockEntity.MAX_FLUID
+                        - tankBlockEntity.getWaterAmount();
+
+        if (availableSpace < BUCKET_AMOUNT) {
+            return ItemInteractionResult.FAIL;
+        }
+
+        if (!level.isClientSide()) {
+            tankBlockEntity.addWater(BUCKET_AMOUNT);
+
+            if (!player.getAbilities().instabuild) {
+                player.setItemInHand(
+                        hand,
+                        new ItemStack(Items.BUCKET)
+                );
+            }
+        }
+
+        return ItemInteractionResult.SUCCESS;
     }
 
     @Override
