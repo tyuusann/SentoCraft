@@ -1,6 +1,7 @@
 package dev.bluerotor.sentocraft.client;
 
 import dev.bluerotor.sentocraft.SentoCraft;
+import dev.bluerotor.sentocraft.client.screen.BoilerScreen;
 import dev.bluerotor.sentocraft.client.screen.TankScreen;
 import dev.bluerotor.sentocraft.registry.ModMenus;
 import net.neoforged.api.distmarker.Dist;
@@ -20,9 +21,15 @@ public final class ClientEvents {
 
     @SubscribeEvent
     public static void registerScreens(RegisterMenuScreensEvent event) {
+
         event.register(
                 ModMenus.TANK.get(),
                 TankScreen::new
+        );
+
+        event.register(
+                ModMenus.BOILER.get(),
+                BoilerScreen::new
         );
     }
 }

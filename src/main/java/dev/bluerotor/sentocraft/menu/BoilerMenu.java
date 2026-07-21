@@ -1,17 +1,13 @@
 package dev.bluerotor.sentocraft.menu;
 
-import dev.bluerotor.sentocraft.blockentity.BoilerBlockEntity;
 import dev.bluerotor.sentocraft.registry.ModBlocks;
 import dev.bluerotor.sentocraft.registry.ModMenus;
-import net.minecraft.world.Container;
-import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.inventory.SimpleContainerData;
-import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
 public class BoilerMenu extends AbstractContainerMenu {
@@ -23,8 +19,6 @@ public class BoilerMenu extends AbstractContainerMenu {
     private final ContainerData data;
     private final ContainerLevelAccess access;
 
-    private final Container fuelContainer;
-
     /**
      * クライアント側
      */
@@ -35,7 +29,6 @@ public class BoilerMenu extends AbstractContainerMenu {
         this(
                 containerId,
                 inventory,
-                new SimpleContainer(1),
                 new SimpleContainerData(DATA_COUNT),
                 ContainerLevelAccess.NULL
         );
@@ -47,27 +40,15 @@ public class BoilerMenu extends AbstractContainerMenu {
     public BoilerMenu(
             int containerId,
             Inventory inventory,
-            Container fuelContainer,
             ContainerData data,
             ContainerLevelAccess access
     ) {
         super(ModMenus.BOILER.get(), containerId);
 
-        checkContainerSize(fuelContainer, 1);
         checkContainerDataCount(data, DATA_COUNT);
 
-        this.fuelContainer = fuelContainer;
         this.data = data;
         this.access = access;
-
-        fuelContainer.startOpen(inventory.player);
-
-        addSlot(new Slot(
-                fuelContainer,
-                0,
-                80,
-                35
-        ));
 
         addDataSlots(data);
     }
@@ -85,10 +66,7 @@ public class BoilerMenu extends AbstractContainerMenu {
     }
 
     @Override
-    public ItemStack quickMoveStack(
-            Player player,
-            int index
-    ) {
+    public ItemStack quickMoveStack(Player player, int index) {
         return ItemStack.EMPTY;
     }
 
@@ -99,11 +77,5 @@ public class BoilerMenu extends AbstractContainerMenu {
                 player,
                 ModBlocks.BOILER.get()
         );
-    }
-
-    @Override
-    public void removed(Player player) {
-        super.removed(player);
-        fuelContainer.stopOpen(player);
     }
 }
