@@ -13,11 +13,24 @@ public class ModItems {
 
     // Tank BlockItem
     public static final DeferredItem<BlockItem> TANK =
-            ITEMS.registerSimpleBlockItem("tank", ModBlocks.TANK);
+            ITEMS.registerSimpleBlockItem(
+                    "tank",
+                    ModBlocks.TANK
+            );
 
     // Boiler BlockItem
     public static final DeferredItem<BlockItem> BOILER =
-            ITEMS.registerSimpleBlockItem("boiler", ModBlocks.BOILER);
+            ITEMS.registerSimpleBlockItem(
+                    "boiler",
+                    ModBlocks.BOILER
+            );
+
+    // Bath BlockItem
+    public static final DeferredItem<BlockItem> BATH =
+            ITEMS.registerSimpleBlockItem(
+                    "bath",
+                    ModBlocks.BATH
+            );
 
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);

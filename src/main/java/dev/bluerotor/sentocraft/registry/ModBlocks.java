@@ -1,6 +1,7 @@
 package dev.bluerotor.sentocraft.registry;
 
 import dev.bluerotor.sentocraft.SentoCraft;
+import dev.bluerotor.sentocraft.block.BathBlock;
 import dev.bluerotor.sentocraft.block.BoilerBlock;
 import dev.bluerotor.sentocraft.block.TankBlock;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -32,6 +33,17 @@ public final class ModBlocks {
                             BlockBehaviour.Properties.of()
                                     .mapColor(MapColor.METAL)
                                     .strength(3.5F)
+                                    .requiresCorrectToolForDrops()
+                    )
+            );
+
+    public static final DeferredBlock<BathBlock> BATH =
+            BLOCKS.register(
+                    "bath",
+                    () -> new BathBlock(
+                            BlockBehaviour.Properties.of()
+                                    .mapColor(MapColor.METAL)
+                                    .strength(2.5F)
                                     .requiresCorrectToolForDrops()
                     )
             );
