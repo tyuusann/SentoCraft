@@ -1,6 +1,7 @@
 package dev.bluerotor.sentocraft.registry;
 
 import dev.bluerotor.sentocraft.SentoCraft;
+import dev.bluerotor.sentocraft.menu.BoilerMenu;
 import dev.bluerotor.sentocraft.menu.TankMenu;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.flag.FeatureFlags;
@@ -22,6 +23,15 @@ public final class ModMenus {
                     "tank",
                     () -> new MenuType<>(
                             TankMenu::new,
+                            FeatureFlags.DEFAULT_FLAGS
+                    )
+            );
+
+    public static final DeferredHolder<MenuType<?>, MenuType<BoilerMenu>> BOILER =
+            MENU_TYPES.register(
+                    "boiler",
+                    () -> new MenuType<>(
+                            BoilerMenu::new,
                             FeatureFlags.DEFAULT_FLAGS
                     )
             );

@@ -1,20 +1,26 @@
 package dev.bluerotor.sentocraft.blockentity;
 
+import dev.bluerotor.sentocraft.menu.BoilerMenu;
 import dev.bluerotor.sentocraft.registry.ModBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.ContainerLevelAccess;
+import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
-public class BoilerBlockEntity extends BlockEntity {
+public class BoilerBlockEntity extends BlockEntity implements MenuProvider {
 
-    /**
-     * 燃料スロット
-     */
     private final ItemStackHandler inventory = new ItemStackHandler(1) {
 
         @Override
@@ -28,21 +34,39 @@ public class BoilerBlockEntity extends BlockEntity {
         }
     };
 
-    /**
-     * 残り燃焼時間
-     */
+    /** 残り燃焼時間 */
     private int burnTime = 0;
 
-    /**
-     * 燃焼開始時の最大燃焼時間
-     * GUIの燃焼ゲージ表示に使用します。
-     */
+    /** 最大燃焼時間 */
     private int maxBurnTime = 0;
 
-    /**
-     * 水からお湯への変換間隔
-     * 20tick = 約1秒
-     */
+    /** GUI同期用 */
+    private final ContainerData containerData = new SimpleContainerData(2) {
+
+        @Override
+        public int get(int index) {
+            return switch (index) {
+                case 0 -> burnTime;
+                case 1 -> maxBurnTime;
+                default -> 0;
+            };
+        }
+
+        @Override
+        public void set(int index, int value) {
+            switch (index) {
+                case 0 -> burnTime = value;
+                case 1 -> maxBurnTime = value;
+            }
+        }
+
+        @Override
+        public int getCount() {
+            return 2;
+        }
+    };
+
+    /** 水→お湯変換間隔（20tick = 1秒） */
     public static final int CONVERT_INTERVAL = 20;
 
     public BoilerBlockEntity(BlockPos pos, BlockState state) {
@@ -50,7 +74,7 @@ public class BoilerBlockEntity extends BlockEntity {
     }
 
     /**
-     * BoilerBlockから毎tick呼び出されます。
+     * 毎tick実行
      */
     public static void tick(
             Level level,
@@ -64,31 +88,31 @@ public class BoilerBlockEntity extends BlockEntity {
 
         boolean changed = false;
 
-        /*
-         * 現在燃焼中なら、残り時間を1tick減らします。
-         */
         if (boiler.burnTime > 0) {
             boiler.burnTime--;
             changed = true;
         }
 
-        /*
-         * 燃焼していない場合は、燃料スロットを確認します。
-         */
         if (boiler.burnTime <= 0) {
-            ItemStack fuelStack = boiler.inventory.getStackInSlot(0);
 
-            if (!fuelStack.isEmpty()) {
-                int fuelBurnTime = fuelStack.getBurnTime(null);
+            ItemStack fuel =
+                    boiler.inventory.getStackInSlot(0);
 
-                if (fuelBurnTime > 0) {
-                    boiler.burnTime = fuelBurnTime;
-                    boiler.maxBurnTime = fuelBurnTime;
+            if (!fuel.isEmpty()) {
 
-                    /*
-                     * 燃料を1個消費します。
-                     */
-                    boiler.inventory.extractItem(0, 1, false);
+                int burn =
+                        fuel.getBurnTime(null);
+
+                if (burn > 0) {
+
+                    boiler.burnTime = burn;
+                    boiler.maxBurnTime = burn;
+
+                    boiler.inventory.extractItem(
+                            0,
+                            1,
+                            false
+                    );
 
                     changed = true;
                 }
@@ -100,33 +124,45 @@ public class BoilerBlockEntity extends BlockEntity {
         }
     }
 
-    /**
-     * 現在燃焼中かどうかを返します。
-     */
-    public boolean isLit() {
-        return burnTime > 0;
+    @Override
+    public Component getDisplayName() {
+        return Component.translatable(
+                "menu.sentocraft.boiler"
+        );
+    }
+
+    @Override
+    public AbstractContainerMenu createMenu(
+            int containerId,
+            Inventory inventory,
+            Player player
+    ) {
+        return new BoilerMenu(
+                containerId,
+                inventory,
+                containerData,
+                ContainerLevelAccess.create(level, worldPosition)
+        );
+    }
+
+    public ContainerData getContainerData() {
+        return containerData;
     }
 
     public ItemStackHandler getInventory() {
         return inventory;
     }
 
+    public boolean isLit() {
+        return burnTime > 0;
+    }
+
     public int getBurnTime() {
         return burnTime;
     }
 
-    public void setBurnTime(int burnTime) {
-        this.burnTime = Math.max(0, burnTime);
-        setChanged();
-    }
-
     public int getMaxBurnTime() {
         return maxBurnTime;
-    }
-
-    public void setMaxBurnTime(int maxBurnTime) {
-        this.maxBurnTime = Math.max(0, maxBurnTime);
-        setChanged();
     }
 
     @Override
@@ -136,7 +172,11 @@ public class BoilerBlockEntity extends BlockEntity {
     ) {
         super.saveAdditional(tag, registries);
 
-        tag.put("Inventory", inventory.serializeNBT(registries));
+        tag.put(
+                "Inventory",
+                inventory.serializeNBT(registries)
+        );
+
         tag.putInt("BurnTime", burnTime);
         tag.putInt("MaxBurnTime", maxBurnTime);
     }
@@ -153,7 +193,7 @@ public class BoilerBlockEntity extends BlockEntity {
                 tag.getCompound("Inventory")
         );
 
-        burnTime = Math.max(0, tag.getInt("BurnTime"));
-        maxBurnTime = Math.max(0, tag.getInt("MaxBurnTime"));
+        burnTime = tag.getInt("BurnTime");
+        maxBurnTime = tag.getInt("MaxBurnTime");
     }
 }
