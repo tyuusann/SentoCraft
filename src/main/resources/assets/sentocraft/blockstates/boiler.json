@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "sentocraft:block/boiler"
+    },
+    "facing=east": {
+      "model": "sentocraft:block/boiler",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "sentocraft:block/boiler",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "sentocraft:block/boiler",
+      "y": 270
+    }
+  }
+}
