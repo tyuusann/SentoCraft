@@ -1,6 +1,7 @@
 package dev.bluerotor.sentocraft.registry;
 
 import dev.bluerotor.sentocraft.SentoCraft;
+import dev.bluerotor.sentocraft.blockentity.BoilerBlockEntity;
 import dev.bluerotor.sentocraft.blockentity.TankBlockEntity;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -23,6 +24,15 @@ public final class ModBlockEntities {
                     () -> BlockEntityType.Builder.of(
                             TankBlockEntity::new,
                             ModBlocks.TANK.get()
+                    ).build(null)
+            );
+
+    public static final Supplier<BlockEntityType<BoilerBlockEntity>> BOILER =
+            BLOCK_ENTITY_TYPES.register(
+                    "boiler",
+                    () -> BlockEntityType.Builder.of(
+                            BoilerBlockEntity::new,
+                            ModBlocks.BOILER.get()
                     ).build(null)
             );
 
