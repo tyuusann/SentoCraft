@@ -1,29 +1,54 @@
 package dev.bluerotor.sentocraft.blockentity;
 
 import dev.bluerotor.sentocraft.registry.ModBlockEntities;
+import dev.bluerotor.sentocraft.registry.ModParticles;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 public class BathBlockEntity extends BlockEntity {
 
-    /** 浴槽内部のお湯容量 */
+    /**
+     * 浴槽内部に保存できるお湯の最大量です。
+     */
     public static final int MAX_HOT_WATER = 2000;
 
-    /** 隣接タンクから1tickに受け取る最大量 */
+    /**
+     * 隣接タンクから1tickに受け取る最大量です。
+     *
+     * 後でコンフィグ対応する予定の値です。
+     */
     public static final int TRANSFER_AMOUNT_PER_TICK = 100;
 
-    /** 1秒ごとのお湯消費量 */
+    /**
+     * 1回の消費処理で減るお湯の量です。
+     */
     public static final int CONSUME_AMOUNT = 100;
 
-    /** 20tick = 1秒 */
+    /**
+     * お湯を消費する間隔です。
+     *
+     * 20tickで約1秒です。
+     */
     public static final int CONSUME_INTERVAL = 20;
 
-    /** 横方向だけを移送対象にする */
+    /**
+     * 湯気を発生させる間隔です。
+     *
+     * 5tickで約0.25秒です。
+     */
+    private static final int STEAM_INTERVAL = 5;
+
+    /**
+     * お湯を受け取れる方向です。
+     *
+     * 上下方向は含めず、東西南北だけを対象にします。
+     */
     private static final Direction[] HORIZONTAL_DIRECTIONS = {
             Direction.NORTH,
             Direction.SOUTH,
@@ -31,16 +56,30 @@ public class BathBlockEntity extends BlockEntity {
             Direction.EAST
     };
 
+    /**
+     * 浴槽内部に保存されているお湯の量です。
+     */
     private int hotWaterAmount = 0;
+
+    /**
+     * お湯の消費間隔を管理するタイマーです。
+     */
     private int consumeTimer = 0;
 
     public BathBlockEntity(
             BlockPos pos,
             BlockState state
     ) {
-        super(ModBlockEntities.BATH.get(), pos, state);
+        super(
+                ModBlockEntities.BATH.get(),
+                pos,
+                state
+        );
     }
 
+    /**
+     * 浴槽の毎tick処理です。
+     */
     public static void tick(
             Level level,
             BlockPos pos,
@@ -53,10 +92,21 @@ public class BathBlockEntity extends BlockEntity {
 
         boolean changed = false;
 
+        /*
+         * 浴槽に空き容量がある場合、
+         * 横方向に隣接するタンクからお湯を受け取ります。
+         */
         if (bath.hotWaterAmount < MAX_HOT_WATER) {
-            changed |= bath.transferFromAdjacentTank(level, pos);
+            changed |= bath.transferFromAdjacentTank(
+                    level,
+                    pos
+            );
         }
 
+        /*
+         * 浴槽にお湯がある間は、
+         * 入浴者の有無に関係なく消費処理を進めます。
+         */
         if (bath.hotWaterAmount > 0) {
             bath.consumeTimer++;
 
@@ -71,6 +121,11 @@ public class BathBlockEntity extends BlockEntity {
                 bath.hotWaterAmount -= consumedAmount;
                 changed = true;
             }
+
+            bath.spawnSteamParticle(
+                    level,
+                    pos
+            );
         } else if (bath.consumeTimer != 0) {
             bath.consumeTimer = 0;
             changed = true;
@@ -84,7 +139,8 @@ public class BathBlockEntity extends BlockEntity {
     /**
      * 東西南北に隣接するタンクからお湯を受け取ります。
      *
-     * 1tickにつき合計最大100mBだけ移送します。
+     * 1tickあたりの合計移送量は、
+     * TRANSFER_AMOUNT_PER_TICKまでです。
      */
     private boolean transferFromAdjacentTank(
             Level level,
@@ -92,7 +148,7 @@ public class BathBlockEntity extends BlockEntity {
     ) {
         int remainingTransfer = Math.min(
                 TRANSFER_AMOUNT_PER_TICK,
-                MAX_HOT_WATER - hotWaterAmount
+                getRemainingCapacity()
         );
 
         if (remainingTransfer <= 0) {
@@ -123,10 +179,15 @@ public class BathBlockEntity extends BlockEntity {
             }
 
             tank.removeHotWater(transferAmount);
-            addHotWater(transferAmount);
 
-            remainingTransfer -= transferAmount;
-            transferred = true;
+            int acceptedAmount =
+                    addHotWater(transferAmount);
+
+            remainingTransfer -= acceptedAmount;
+
+            if (acceptedAmount > 0) {
+                transferred = true;
+            }
 
             if (remainingTransfer <= 0) {
                 break;
@@ -134,6 +195,76 @@ public class BathBlockEntity extends BlockEntity {
         }
 
         return transferred;
+    }
+
+    /**
+     * 浴槽上部から白い専用湯気を発生させます。
+     */
+    private void spawnSteamParticle(
+            Level level,
+            BlockPos pos
+    ) {
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        if (level.getGameTime() % STEAM_INTERVAL != 0) {
+            return;
+        }
+
+        /*
+         * 浴槽内の広い範囲からランダムに発生させます。
+         */
+        double particleX =
+                pos.getX()
+                        + 0.20D
+                        + level.random.nextDouble() * 0.60D;
+
+        /*
+         * 湯量には連動させず、
+         * 浴槽より少し高い固定位置から発生させます。
+         */
+        double particleY =
+                pos.getY() + 1.08D;
+
+        double particleZ =
+                pos.getZ()
+                        + 0.20D
+                        + level.random.nextDouble() * 0.60D;
+
+        /*
+         * 横方向にごく小さなランダム速度を与えます。
+         */
+        double velocityX =
+                (level.random.nextDouble() - 0.5D)
+                        * 0.006D;
+
+        /*
+         * 必ず上向きの初速度にします。
+         */
+        double velocityY =
+                0.014D
+                        + level.random.nextDouble() * 0.006D;
+
+        double velocityZ =
+                (level.random.nextDouble() - 0.5D)
+                        * 0.006D;
+
+        /*
+         * countを0にすることで、
+         * xDist、yDist、zDistを粒子の初速度として渡します。
+         */
+        serverLevel.sendParticles(
+                ModParticles.STEAM,
+                particleX,
+                particleY,
+                particleZ,
+                0,
+                velocityX,
+                velocityY,
+                velocityZ,
+                1.0D
+        );
     }
 
     public int getHotWaterAmount() {
@@ -152,8 +283,11 @@ public class BathBlockEntity extends BlockEntity {
         return hotWaterAmount >= MAX_HOT_WATER;
     }
 
-    public void setHotWaterAmount(int amount) {
-        int clampedAmount = clampHotWaterAmount(amount);
+    public void setHotWaterAmount(
+            int amount
+    ) {
+        int clampedAmount =
+                clampHotWaterAmount(amount);
 
         if (hotWaterAmount == clampedAmount) {
             return;
@@ -163,7 +297,15 @@ public class BathBlockEntity extends BlockEntity {
         setChanged();
     }
 
-    public int addHotWater(int amount) {
+    /**
+     * 浴槽へお湯を追加します。
+     *
+     * @param amount 追加しようとする量
+     * @return 実際に追加できた量
+     */
+    public int addHotWater(
+            int amount
+    ) {
         if (amount <= 0) {
             return 0;
         }
@@ -183,7 +325,15 @@ public class BathBlockEntity extends BlockEntity {
         return acceptedAmount;
     }
 
-    public int removeHotWater(int amount) {
+    /**
+     * 浴槽からお湯を取り除きます。
+     *
+     * @param amount 取り除こうとする量
+     * @return 実際に取り除いた量
+     */
+    public int removeHotWater(
+            int amount
+    ) {
         if (amount <= 0) {
             return 0;
         }
@@ -203,19 +353,33 @@ public class BathBlockEntity extends BlockEntity {
         return removedAmount;
     }
 
-    private static int clampHotWaterAmount(int amount) {
+    /**
+     * お湯量を0から最大容量の範囲に制限します。
+     */
+    private static int clampHotWaterAmount(
+            int amount
+    ) {
         return Math.max(
                 0,
-                Math.min(MAX_HOT_WATER, amount)
+                Math.min(
+                        MAX_HOT_WATER,
+                        amount
+                )
         );
     }
 
+    /**
+     * Block Entityの情報をNBTへ保存します。
+     */
     @Override
     protected void saveAdditional(
             CompoundTag tag,
             HolderLookup.Provider registries
     ) {
-        super.saveAdditional(tag, registries);
+        super.saveAdditional(
+                tag,
+                registries
+        );
 
         tag.putInt(
                 "HotWaterAmount",
@@ -228,12 +392,18 @@ public class BathBlockEntity extends BlockEntity {
         );
     }
 
+    /**
+     * NBTからBlock Entityの情報を読み込みます。
+     */
     @Override
     protected void loadAdditional(
             CompoundTag tag,
             HolderLookup.Provider registries
     ) {
-        super.loadAdditional(tag, registries);
+        super.loadAdditional(
+                tag,
+                registries
+        );
 
         hotWaterAmount = clampHotWaterAmount(
                 tag.getInt("HotWaterAmount")
