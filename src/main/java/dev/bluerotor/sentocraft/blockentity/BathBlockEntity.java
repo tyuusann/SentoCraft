@@ -1,5 +1,6 @@
 package dev.bluerotor.sentocraft.blockentity;
 
+import dev.bluerotor.sentocraft.compat.BathWarmthManager;
 import dev.bluerotor.sentocraft.compat.ColdSweatCompat;
 import dev.bluerotor.sentocraft.registry.ModBlockEntities;
 import dev.bluerotor.sentocraft.registry.ModParticles;
@@ -8,6 +9,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -21,59 +23,75 @@ public class BathBlockEntity extends BlockEntity {
     /**
      * 浴槽内部に保存できるお湯の最大量です。
      */
-    public static final int MAX_HOT_WATER = 2000;
+    public static final int MAX_HOT_WATER =
+            2000;
 
     /**
      * 隣接タンクから1tickに受け取る最大量です。
      */
-    public static final int TRANSFER_AMOUNT_PER_TICK = 100;
+    public static final int TRANSFER_AMOUNT_PER_TICK =
+            100;
 
     /**
      * 1回の消費処理で減るお湯の量です。
      */
-    public static final int CONSUME_AMOUNT = 100;
+    public static final int CONSUME_AMOUNT =
+            100;
 
     /**
      * お湯を消費する間隔です。
      *
      * 20tickで約1秒です。
      */
-    public static final int CONSUME_INTERVAL = 20;
+    public static final int CONSUME_INTERVAL =
+            20;
 
     /**
      * 湯気を発生させる間隔です。
      *
      * 5tickで約0.25秒です。
      */
-    private static final int STEAM_INTERVAL = 5;
+    private static final int STEAM_INTERVAL =
+            5;
 
     /**
-     * 入浴中の体温上昇処理を実行する間隔です。
+     * 入浴者を検索する間隔です。
+     *
+     * 10tickで約0.5秒です。
+     */
+    private static final int BATHING_SCAN_INTERVAL =
+            10;
+
+    /**
+     * 入浴中の温度上昇を実行する間隔です。
      *
      * 20tickで約1秒です。
      */
-    private static final int WARMING_INTERVAL = 20;
+    private static final int WARMING_INTERVAL =
+            20;
 
     /**
-     * 入浴中の回復処理を実行する間隔です。
+     * 入浴中の回復を実行する間隔です。
      *
      * 40tickで約2秒です。
      */
-    private static final int HEAL_INTERVAL = 40;
+    private static final int HEAL_INTERVAL =
+            40;
 
     /**
      * 1回の回復量です。
      *
-     * 1.0Fでハート半分なので、
-     * 0.5Fはハート4分の1です。
+     * Minecraftでは1.0Fがハート半分です。
      */
-    private static final float HEAL_AMOUNT = 0.5F;
+    private static final float HEAL_AMOUNT =
+            0.5F;
 
     /**
-     * 1回のCold Sweat深部体温上昇量です。
+     * 入浴中に1秒あたり加算する
+     * Cold Sweatの深部体温です。
      */
     private static final double CORE_TEMPERATURE_INCREASE =
-            1.0D;
+            5.0D;
 
     /**
      * お湯を受け取れる方向です。
@@ -90,12 +108,14 @@ public class BathBlockEntity extends BlockEntity {
     /**
      * 浴槽内部に保存されているお湯の量です。
      */
-    private int hotWaterAmount = 0;
+    private int hotWaterAmount =
+            0;
 
     /**
      * お湯の消費間隔を管理するタイマーです。
      */
-    private int consumeTimer = 0;
+    private int consumeTimer =
+            0;
 
     public BathBlockEntity(
             BlockPos pos,
@@ -121,7 +141,8 @@ public class BathBlockEntity extends BlockEntity {
             return;
         }
 
-        boolean changed = false;
+        boolean changed =
+                false;
 
         /*
          * 浴槽に空き容量がある場合、
@@ -136,39 +157,52 @@ public class BathBlockEntity extends BlockEntity {
 
         /*
          * 浴槽にお湯がある間は、
-         * 入浴者の有無に関係なく消費処理を進めます。
+         * 消費、湯気、入浴効果を処理します。
          */
         if (bath.hotWaterAmount > 0) {
             bath.consumeTimer++;
 
             if (bath.consumeTimer >= CONSUME_INTERVAL) {
-                bath.consumeTimer = 0;
+                bath.consumeTimer =
+                        0;
 
-                int consumedAmount = Math.min(
-                        CONSUME_AMOUNT,
-                        bath.hotWaterAmount
-                );
+                int consumedAmount =
+                        Math.min(
+                                CONSUME_AMOUNT,
+                                bath.hotWaterAmount
+                        );
 
-                bath.hotWaterAmount -= consumedAmount;
-                changed = true;
+                bath.hotWaterAmount -=
+                        consumedAmount;
+
+                changed =
+                        true;
             }
+
+            /*
+             * お湯が入っている浴槽の周辺へ、
+             * Cold Sweatの環境加温を適用します。
+             */
+            BathWarmthManager.applyEnvironmentHeat(
+                    level,
+                    pos
+            );
 
             bath.spawnSteamParticle(
                     level,
                     pos
             );
 
-            /*
-             * お湯がある浴槽に入っているプレイヤーへ、
-             * 回復と体温上昇を適用します。
-             */
             bath.applyBathingEffects(
                     level,
                     pos
             );
         } else if (bath.consumeTimer != 0) {
-            bath.consumeTimer = 0;
-            changed = true;
+            bath.consumeTimer =
+                    0;
+
+            changed =
+                    true;
         }
 
         if (changed) {
@@ -179,54 +213,73 @@ public class BathBlockEntity extends BlockEntity {
     /**
      * 東西南北に隣接するタンクからお湯を受け取ります。
      *
-     * 1tickあたりの合計移送量は、
+     * 1tickあたりの合計移送量は
      * TRANSFER_AMOUNT_PER_TICKまでです。
      */
     private boolean transferFromAdjacentTank(
             Level level,
             BlockPos bathPos
     ) {
-        int remainingTransfer = Math.min(
-                TRANSFER_AMOUNT_PER_TICK,
-                getRemainingCapacity()
-        );
+        int remainingTransfer =
+                Math.min(
+                        TRANSFER_AMOUNT_PER_TICK,
+                        getRemainingCapacity()
+                );
 
         if (remainingTransfer <= 0) {
             return false;
         }
 
-        boolean transferred = false;
+        boolean transferred =
+                false;
 
-        for (Direction direction : HORIZONTAL_DIRECTIONS) {
+        for (Direction direction
+                : HORIZONTAL_DIRECTIONS) {
             BlockPos adjacentPos =
                     bathPos.relative(direction);
 
             BlockEntity adjacentBlockEntity =
-                    level.getBlockEntity(adjacentPos);
+                    level.getBlockEntity(
+                            adjacentPos
+                    );
 
             if (!(adjacentBlockEntity
                     instanceof TankBlockEntity tank)) {
                 continue;
             }
 
-            int transferAmount = Math.min(
-                    remainingTransfer,
-                    tank.getHotWaterAmount()
-            );
+            int transferAmount =
+                    Math.min(
+                            remainingTransfer,
+                            tank.getHotWaterAmount()
+                    );
 
             if (transferAmount <= 0) {
                 continue;
             }
 
-            tank.removeHotWater(transferAmount);
+            /*
+             * transferAmountは浴槽の空き容量以下、
+             * かつタンクのお湯量以下に制限済みです。
+             *
+             * TankBlockEntity.removeHotWater()はvoid型なので、
+             * 戻り値は受け取りません。
+             */
+            tank.removeHotWater(
+                    transferAmount
+            );
 
             int acceptedAmount =
-                    addHotWater(transferAmount);
+                    addHotWater(
+                            transferAmount
+                    );
 
-            remainingTransfer -= acceptedAmount;
+            remainingTransfer -=
+                    acceptedAmount;
 
             if (acceptedAmount > 0) {
-                transferred = true;
+                transferred =
+                        true;
             }
 
             if (remainingTransfer <= 0) {
@@ -244,7 +297,15 @@ public class BathBlockEntity extends BlockEntity {
             Level level,
             BlockPos pos
     ) {
-        long gameTime = level.getGameTime();
+        long gameTime =
+                level.getGameTime();
+
+        /*
+         * 入浴判定は0.5秒ごとに行います。
+         */
+        if (gameTime % BATHING_SCAN_INTERVAL != 0) {
+            return;
+        }
 
         boolean shouldHeal =
                 gameTime % HEAL_INTERVAL == 0;
@@ -252,12 +313,10 @@ public class BathBlockEntity extends BlockEntity {
         boolean shouldWarm =
                 gameTime % WARMING_INTERVAL == 0;
 
-        if (!shouldHeal && !shouldWarm) {
-            return;
-        }
-
         AABB bathingArea =
-                createBathingArea(pos);
+                createBathingArea(
+                        pos
+                );
 
         List<Player> bathingPlayers =
                 level.getEntitiesOfClass(
@@ -268,13 +327,37 @@ public class BathBlockEntity extends BlockEntity {
                                         && !player.isSpectator()
                 );
 
-        for (Player player : bathingPlayers) {
+        for (Player player
+                : bathingPlayers) {
+
+            /*
+             * 現在入浴中であることを、
+             * 入浴後の余熱管理へ記録します。
+             */
+            if (player
+                    instanceof ServerPlayer serverPlayer) {
+                BathWarmthManager.markBathing(
+                        serverPlayer
+                );
+            }
+
+            /*
+             * 回復効果は浴槽内にいる間だけ適用します。
+             */
             if (shouldHeal
                     && player.getHealth()
                     < player.getMaxHealth()) {
-                player.heal(HEAL_AMOUNT);
+                player.heal(
+                        HEAL_AMOUNT
+                );
             }
 
+            /*
+             * 入浴中は1秒ごとに深部体温を上昇させます。
+             *
+             * 周囲の環境温度はBathWarmthManager側で処理するため、
+             * ここでは深部体温だけを変更します。
+             */
             if (shouldWarm) {
                 ColdSweatCompat.warmPlayer(
                         player,
@@ -285,10 +368,9 @@ public class BathBlockEntity extends BlockEntity {
     }
 
     /**
-     * 入浴判定に使用する浴槽内部の範囲を作成します。
+     * 入浴判定に使用する浴槽内部の範囲です。
      *
-     * 浴槽の壁厚2/16に合わせて、
-     * 水平方向は内側12/16の範囲にしています。
+     * 水平方向は浴槽の縁より内側だけを対象にします。
      */
     private static AABB createBathingArea(
             BlockPos pos
@@ -304,13 +386,14 @@ public class BathBlockEntity extends BlockEntity {
     }
 
     /**
-     * 浴槽上部から白い専用湯気を発生させます。
+     * 浴槽上部から専用の湯気を発生させます。
      */
     private void spawnSteamParticle(
             Level level,
             BlockPos pos
     ) {
-        if (!(level instanceof ServerLevel serverLevel)) {
+        if (!(level
+                instanceof ServerLevel serverLevel)) {
             return;
         }
 
@@ -321,26 +404,32 @@ public class BathBlockEntity extends BlockEntity {
         double particleX =
                 pos.getX()
                         + 0.20D
-                        + level.random.nextDouble() * 0.60D;
+                        + level.random.nextDouble()
+                        * 0.60D;
 
         double particleY =
-                pos.getY() + 1.08D;
+                pos.getY()
+                        + 1.08D;
 
         double particleZ =
                 pos.getZ()
                         + 0.20D
-                        + level.random.nextDouble() * 0.60D;
+                        + level.random.nextDouble()
+                        * 0.60D;
 
         double velocityX =
-                (level.random.nextDouble() - 0.5D)
+                (level.random.nextDouble()
+                        - 0.5D)
                         * 0.006D;
 
         double velocityY =
                 0.014D
-                        + level.random.nextDouble() * 0.006D;
+                        + level.random.nextDouble()
+                        * 0.006D;
 
         double velocityZ =
-                (level.random.nextDouble() - 0.5D)
+                (level.random.nextDouble()
+                        - 0.5D)
                         * 0.006D;
 
         serverLevel.sendParticles(
@@ -361,7 +450,8 @@ public class BathBlockEntity extends BlockEntity {
     }
 
     public int getRemainingCapacity() {
-        return MAX_HOT_WATER - hotWaterAmount;
+        return MAX_HOT_WATER
+                - hotWaterAmount;
     }
 
     public boolean isEmpty() {
@@ -369,20 +459,25 @@ public class BathBlockEntity extends BlockEntity {
     }
 
     public boolean isFull() {
-        return hotWaterAmount >= MAX_HOT_WATER;
+        return hotWaterAmount
+                >= MAX_HOT_WATER;
     }
 
     public void setHotWaterAmount(
             int amount
     ) {
         int clampedAmount =
-                clampHotWaterAmount(amount);
+                clampHotWaterAmount(
+                        amount
+                );
 
         if (hotWaterAmount == clampedAmount) {
             return;
         }
 
-        hotWaterAmount = clampedAmount;
+        hotWaterAmount =
+                clampedAmount;
+
         setChanged();
     }
 
@@ -399,16 +494,19 @@ public class BathBlockEntity extends BlockEntity {
             return 0;
         }
 
-        int acceptedAmount = Math.min(
-                amount,
-                getRemainingCapacity()
-        );
+        int acceptedAmount =
+                Math.min(
+                        amount,
+                        getRemainingCapacity()
+                );
 
         if (acceptedAmount <= 0) {
             return 0;
         }
 
-        hotWaterAmount += acceptedAmount;
+        hotWaterAmount +=
+                acceptedAmount;
+
         setChanged();
 
         return acceptedAmount;
@@ -427,16 +525,19 @@ public class BathBlockEntity extends BlockEntity {
             return 0;
         }
 
-        int removedAmount = Math.min(
-                amount,
-                hotWaterAmount
-        );
+        int removedAmount =
+                Math.min(
+                        amount,
+                        hotWaterAmount
+                );
 
         if (removedAmount <= 0) {
             return 0;
         }
 
-        hotWaterAmount -= removedAmount;
+        hotWaterAmount -=
+                removedAmount;
+
         setChanged();
 
         return removedAmount;
@@ -494,16 +595,22 @@ public class BathBlockEntity extends BlockEntity {
                 registries
         );
 
-        hotWaterAmount = clampHotWaterAmount(
-                tag.getInt("HotWaterAmount")
-        );
+        hotWaterAmount =
+                clampHotWaterAmount(
+                        tag.getInt(
+                                "HotWaterAmount"
+                        )
+                );
 
-        consumeTimer = Math.max(
-                0,
-                Math.min(
-                        CONSUME_INTERVAL - 1,
-                        tag.getInt("ConsumeTimer")
-                )
-        );
+        consumeTimer =
+                Math.max(
+                        0,
+                        Math.min(
+                                CONSUME_INTERVAL - 1,
+                                tag.getInt(
+                                        "ConsumeTimer"
+                                )
+                        )
+                );
     }
 }
