@@ -1,5 +1,6 @@
 package dev.bluerotor.sentocraft.blockentity;
 
+import dev.bluerotor.sentocraft.compat.ColdSweatCompat;
 import dev.bluerotor.sentocraft.registry.ModBlockEntities;
 import dev.bluerotor.sentocraft.registry.ModParticles;
 import net.minecraft.core.BlockPos;
@@ -7,9 +8,13 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+
+import java.util.List;
 
 public class BathBlockEntity extends BlockEntity {
 
@@ -20,8 +25,6 @@ public class BathBlockEntity extends BlockEntity {
 
     /**
      * 隣接タンクから1tickに受け取る最大量です。
-     *
-     * 後でコンフィグ対応する予定の値です。
      */
     public static final int TRANSFER_AMOUNT_PER_TICK = 100;
 
@@ -43,6 +46,34 @@ public class BathBlockEntity extends BlockEntity {
      * 5tickで約0.25秒です。
      */
     private static final int STEAM_INTERVAL = 5;
+
+    /**
+     * 入浴中の体温上昇処理を実行する間隔です。
+     *
+     * 20tickで約1秒です。
+     */
+    private static final int WARMING_INTERVAL = 20;
+
+    /**
+     * 入浴中の回復処理を実行する間隔です。
+     *
+     * 40tickで約2秒です。
+     */
+    private static final int HEAL_INTERVAL = 40;
+
+    /**
+     * 1回の回復量です。
+     *
+     * 1.0Fでハート半分なので、
+     * 0.5Fはハート4分の1です。
+     */
+    private static final float HEAL_AMOUNT = 0.5F;
+
+    /**
+     * 1回のCold Sweat深部体温上昇量です。
+     */
+    private static final double CORE_TEMPERATURE_INCREASE =
+            1.0D;
 
     /**
      * お湯を受け取れる方向です。
@@ -126,6 +157,15 @@ public class BathBlockEntity extends BlockEntity {
                     level,
                     pos
             );
+
+            /*
+             * お湯がある浴槽に入っているプレイヤーへ、
+             * 回復と体温上昇を適用します。
+             */
+            bath.applyBathingEffects(
+                    level,
+                    pos
+            );
         } else if (bath.consumeTimer != 0) {
             bath.consumeTimer = 0;
             changed = true;
@@ -198,6 +238,72 @@ public class BathBlockEntity extends BlockEntity {
     }
 
     /**
+     * 浴槽内にいるプレイヤーへ入浴効果を適用します。
+     */
+    private void applyBathingEffects(
+            Level level,
+            BlockPos pos
+    ) {
+        long gameTime = level.getGameTime();
+
+        boolean shouldHeal =
+                gameTime % HEAL_INTERVAL == 0;
+
+        boolean shouldWarm =
+                gameTime % WARMING_INTERVAL == 0;
+
+        if (!shouldHeal && !shouldWarm) {
+            return;
+        }
+
+        AABB bathingArea =
+                createBathingArea(pos);
+
+        List<Player> bathingPlayers =
+                level.getEntitiesOfClass(
+                        Player.class,
+                        bathingArea,
+                        player ->
+                                player.isAlive()
+                                        && !player.isSpectator()
+                );
+
+        for (Player player : bathingPlayers) {
+            if (shouldHeal
+                    && player.getHealth()
+                    < player.getMaxHealth()) {
+                player.heal(HEAL_AMOUNT);
+            }
+
+            if (shouldWarm) {
+                ColdSweatCompat.warmPlayer(
+                        player,
+                        CORE_TEMPERATURE_INCREASE
+                );
+            }
+        }
+    }
+
+    /**
+     * 入浴判定に使用する浴槽内部の範囲を作成します。
+     *
+     * 浴槽の壁厚2/16に合わせて、
+     * 水平方向は内側12/16の範囲にしています。
+     */
+    private static AABB createBathingArea(
+            BlockPos pos
+    ) {
+        return new AABB(
+                pos.getX() + 0.125D,
+                pos.getY() + 0.125D,
+                pos.getZ() + 0.125D,
+                pos.getX() + 0.875D,
+                pos.getY() + 1.50D,
+                pos.getZ() + 0.875D
+        );
+    }
+
+    /**
      * 浴槽上部から白い専用湯気を発生させます。
      */
     private void spawnSteamParticle(
@@ -212,18 +318,11 @@ public class BathBlockEntity extends BlockEntity {
             return;
         }
 
-        /*
-         * 浴槽内の広い範囲からランダムに発生させます。
-         */
         double particleX =
                 pos.getX()
                         + 0.20D
                         + level.random.nextDouble() * 0.60D;
 
-        /*
-         * 湯量には連動させず、
-         * 浴槽より少し高い固定位置から発生させます。
-         */
         double particleY =
                 pos.getY() + 1.08D;
 
@@ -232,16 +331,10 @@ public class BathBlockEntity extends BlockEntity {
                         + 0.20D
                         + level.random.nextDouble() * 0.60D;
 
-        /*
-         * 横方向にごく小さなランダム速度を与えます。
-         */
         double velocityX =
                 (level.random.nextDouble() - 0.5D)
                         * 0.006D;
 
-        /*
-         * 必ず上向きの初速度にします。
-         */
         double velocityY =
                 0.014D
                         + level.random.nextDouble() * 0.006D;
@@ -250,10 +343,6 @@ public class BathBlockEntity extends BlockEntity {
                 (level.random.nextDouble() - 0.5D)
                         * 0.006D;
 
-        /*
-         * countを0にすることで、
-         * xDist、yDist、zDistを粒子の初速度として渡します。
-         */
         serverLevel.sendParticles(
                 ModParticles.STEAM,
                 particleX,
