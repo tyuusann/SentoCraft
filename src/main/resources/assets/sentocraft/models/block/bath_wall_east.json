@@ -1,0 +1,34 @@
+{
+  "ambientocclusion": true,
+  "textures": {
+    "particle": "minecraft:block/iron_block",
+    "all": "minecraft:block/iron_block"
+  },
+  "elements": [
+    {
+      "name": "east_wall",
+      "from": [14, 2, 2],
+      "to": [16, 12, 14],
+      "faces": {
+        "north": {
+          "texture": "#all"
+        },
+        "east": {
+          "texture": "#all"
+        },
+        "south": {
+          "texture": "#all"
+        },
+        "west": {
+          "texture": "#all"
+        },
+        "up": {
+          "texture": "#all"
+        },
+        "down": {
+          "texture": "#all"
+        }
+      }
+    }
+  ]
+}

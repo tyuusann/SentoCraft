@@ -1,7 +1,101 @@
 {
-  "variants": {
-    "": {
-      "model": "sentocraft:block/bath"
+  "multipart": [
+    {
+      "apply": {
+        "model": "sentocraft:block/bath_bottom"
+      }
+    },
+    {
+      "when": {
+        "connect_north": "false"
+      },
+      "apply": {
+        "model": "sentocraft:block/bath_wall_north"
+      }
+    },
+    {
+      "when": {
+        "connect_south": "false"
+      },
+      "apply": {
+        "model": "sentocraft:block/bath_wall_south"
+      }
+    },
+    {
+      "when": {
+        "connect_west": "false"
+      },
+      "apply": {
+        "model": "sentocraft:block/bath_wall_west"
+      }
+    },
+    {
+      "when": {
+        "connect_east": "false"
+      },
+      "apply": {
+        "model": "sentocraft:block/bath_wall_east"
+      }
+    },
+    {
+      "when": {
+        "OR": [
+          {
+            "connect_north": "false"
+          },
+          {
+            "connect_west": "false"
+          }
+        ]
+      },
+      "apply": {
+        "model": "sentocraft:block/bath_corner_north_west"
+      }
+    },
+    {
+      "when": {
+        "OR": [
+          {
+            "connect_north": "false"
+          },
+          {
+            "connect_east": "false"
+          }
+        ]
+      },
+      "apply": {
+        "model": "sentocraft:block/bath_corner_north_east"
+      }
+    },
+    {
+      "when": {
+        "OR": [
+          {
+            "connect_south": "false"
+          },
+          {
+            "connect_west": "false"
+          }
+        ]
+      },
+      "apply": {
+        "model": "sentocraft:block/bath_corner_south_west"
+      }
+    },
+    {
+      "when": {
+        "OR": [
+          {
+            "connect_south": "false"
+          },
+          {
+            "connect_east": "false"
+          }
+        ]
+      },
+      "apply": {
+        "model": "sentocraft:block/bath_corner_south_east"
+      }
     }
-  }
+  ]
 }
