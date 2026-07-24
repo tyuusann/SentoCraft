@@ -16,24 +16,40 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
+/**
+ * 浴槽内部のお湯と入浴効果を管理します。
+ *
+ * 東西南北に接続された浴槽は、
+ * 1つの大型浴槽ネットワークとして扱われます。
+ */
 public class BathBlockEntity extends BlockEntity {
 
     /**
-     * 浴槽内部に保存できるお湯の最大量です。
+     * 浴槽1ブロックあたりに保存できる
+     * お湯の最大量です。
      */
     public static final int MAX_HOT_WATER =
             2000;
 
     /**
-     * 隣接タンクから1tickに受け取る最大量です。
+     * 浴槽ネットワークが隣接タンクから
+     * 1tickに受け取る最大量です。
      */
     public static final int TRANSFER_AMOUNT_PER_TICK =
             100;
 
     /**
      * 1回の消費処理で減るお湯の量です。
+     *
+     * 接続された大型浴槽全体で
+     * この量だけ消費します。
      */
     public static final int CONSUME_AMOUNT =
             100;
@@ -94,9 +110,10 @@ public class BathBlockEntity extends BlockEntity {
             5.0D;
 
     /**
-     * お湯を受け取れる方向です。
+     * 浴槽およびタンクを検索する方向です。
      *
-     * 上下方向は含めず、東西南北だけを対象にします。
+     * 上下方向は接続せず、
+     * 同じ高さの東西南北だけを対象にします。
      */
     private static final Direction[] HORIZONTAL_DIRECTIONS = {
             Direction.NORTH,
@@ -106,13 +123,43 @@ public class BathBlockEntity extends BlockEntity {
     };
 
     /**
-     * 浴槽内部に保存されているお湯の量です。
+     * 浴槽ネットワークの代表座標を決める順序です。
+     *
+     * 接続された浴槽の中で、
+     * X、Y、Zの順に最も小さい座標を
+     * ネットワークの管理役とします。
+     */
+    private static final Comparator<BathBlockEntity>
+            BATH_POSITION_COMPARATOR =
+            Comparator
+                    .<BathBlockEntity>comparingInt(
+                            bath ->
+                                    bath.getBlockPos().getX()
+                    )
+                    .thenComparingInt(
+                            bath ->
+                                    bath.getBlockPos().getY()
+                    )
+                    .thenComparingInt(
+                            bath ->
+                                    bath.getBlockPos().getZ()
+                    );
+
+    /**
+     * この浴槽ブロック内部に保存されている
+     * お湯の量です。
+     *
+     * 大型浴槽では、ネットワーク全体のお湯を
+     * 接続された各浴槽へ均等に分配して保存します。
      */
     private int hotWaterAmount =
             0;
 
     /**
-     * お湯の消費間隔を管理するタイマーです。
+     * ネットワーク全体のお湯の
+     * 消費間隔を管理するタイマーです。
+     *
+     * ネットワークの代表浴槽だけが使用します。
      */
     private int consumeTimer =
             0;
@@ -130,6 +177,9 @@ public class BathBlockEntity extends BlockEntity {
 
     /**
      * 浴槽の毎tick処理です。
+     *
+     * 接続ネットワークの代表浴槽だけが、
+     * 給湯、消費、お湯の分配、入浴効果を処理します。
      */
     public static void tick(
             Level level,
@@ -141,153 +191,386 @@ public class BathBlockEntity extends BlockEntity {
             return;
         }
 
-        boolean changed =
-                false;
+        List<BathBlockEntity> connectedBaths =
+                findConnectedBaths(
+                        level,
+                        pos
+                );
 
-        /*
-         * 浴槽に空き容量がある場合、
-         * 横方向に隣接するタンクからお湯を受け取ります。
-         */
-        if (bath.hotWaterAmount < MAX_HOT_WATER) {
-            changed |= bath.transferFromAdjacentTank(
-                    level,
-                    pos
-            );
+        if (connectedBaths.isEmpty()) {
+            return;
         }
 
         /*
-         * 浴槽にお湯がある間は、
-         * 消費、湯気、入浴効果を処理します。
+         * findConnectedBaths()では座標順に並べているため、
+         * 最初の浴槽がネットワークの代表浴槽です。
          */
-        if (bath.hotWaterAmount > 0) {
-            bath.consumeTimer++;
+        BathBlockEntity controllerBath =
+                connectedBaths.getFirst();
 
-            if (bath.consumeTimer >= CONSUME_INTERVAL) {
-                bath.consumeTimer =
+        /*
+         * 代表以外の浴槽は処理しません。
+         *
+         * これにより、大型浴槽の消費や給湯が
+         * 浴槽の個数分だけ重複することを防ぎます。
+         */
+        if (bath != controllerBath) {
+            return;
+        }
+
+        controllerBath.processBathNetwork(
+                level,
+                connectedBaths
+        );
+    }
+
+    /**
+     * 接続された浴槽ネットワーク全体を処理します。
+     *
+     * @param level          浴槽が存在するLevel
+     * @param connectedBaths 接続されている全浴槽
+     */
+    private void processBathNetwork(
+            Level level,
+            List<BathBlockEntity> connectedBaths
+    ) {
+        int totalHotWater =
+                getTotalHotWater(
+                        connectedBaths
+                );
+
+        int totalCapacity =
+                connectedBaths.size()
+                        * MAX_HOT_WATER;
+
+        /*
+         * ネットワーク内のいずれかの浴槽に
+         * タンクが隣接していれば給湯します。
+         *
+         * 同じタンクが複数の浴槽に接していても、
+         * 1tickに重複して吸い出さないようにしています。
+         */
+        if (totalHotWater < totalCapacity) {
+            int transferredAmount =
+                    transferFromAdjacentTanks(
+                            level,
+                            connectedBaths,
+                            totalCapacity
+                                    - totalHotWater
+                    );
+
+            totalHotWater +=
+                    transferredAmount;
+        }
+
+        /*
+         * お湯がある場合だけ、
+         * ネットワーク全体で消費タイマーを進めます。
+         */
+        if (totalHotWater > 0) {
+            consumeTimer++;
+
+            if (consumeTimer >= CONSUME_INTERVAL) {
+                consumeTimer =
                         0;
 
                 int consumedAmount =
                         Math.min(
                                 CONSUME_AMOUNT,
-                                bath.hotWaterAmount
+                                totalHotWater
                         );
 
-                bath.hotWaterAmount -=
+                totalHotWater -=
                         consumedAmount;
 
-                changed =
-                        true;
+                setChanged();
             }
-
-            /*
-             * お湯が入っている浴槽の周辺へ、
-             * Cold Sweatの環境加温を適用します。
-             */
-            BathWarmthManager.applyEnvironmentHeat(
-                    level,
-                    pos
-            );
-
-            bath.spawnSteamParticle(
-                    level,
-                    pos
-            );
-
-            bath.applyBathingEffects(
-                    level,
-                    pos
-            );
-        } else if (bath.consumeTimer != 0) {
-            bath.consumeTimer =
+        } else if (consumeTimer != 0) {
+            consumeTimer =
                     0;
 
-            changed =
-                    true;
+            setChanged();
         }
 
-        if (changed) {
-            bath.setChanged();
+        /*
+         * ネットワーク全体のお湯を、
+         * 接続されている各浴槽へ均等に分配します。
+         *
+         * 各浴槽が実際にお湯を保存するため、
+         * 浴槽を破壊してネットワークが分割された場合も、
+         * 残った区画に保存されていたお湯が維持されます。
+         */
+        distributeHotWater(
+                connectedBaths,
+                totalHotWater
+        );
+
+        if (totalHotWater <= 0) {
+            return;
+        }
+
+        /*
+         * ネットワークにお湯があれば、
+         * 接続されたすべての浴槽区画で
+         * 周辺加温、湯気、入浴効果を処理します。
+         */
+        for (BathBlockEntity connectedBath
+                : connectedBaths) {
+            BlockPos bathPos =
+                    connectedBath.getBlockPos();
+
+            BathWarmthManager.applyEnvironmentHeat(
+                    level,
+                    bathPos
+            );
+
+            connectedBath.spawnSteamParticle(
+                    level,
+                    bathPos
+            );
+
+            connectedBath.applyBathingEffects(
+                    level,
+                    bathPos
+            );
         }
     }
 
     /**
-     * 東西南北に隣接するタンクからお湯を受け取ります。
-     *
-     * 1tickあたりの合計移送量は
-     * TRANSFER_AMOUNT_PER_TICKまでです。
+     * 指定座標から東西南北に接続されている
+     * すべての浴槽を検索します。
      */
-    private boolean transferFromAdjacentTank(
+    private static List<BathBlockEntity> findConnectedBaths(
             Level level,
-            BlockPos bathPos
+            BlockPos startPos
+    ) {
+        List<BathBlockEntity> connectedBaths =
+                new ArrayList<>();
+
+        Set<BlockPos> visitedPositions =
+                new HashSet<>();
+
+        ArrayDeque<BlockPos> searchQueue =
+                new ArrayDeque<>();
+
+        searchQueue.add(
+                startPos.immutable()
+        );
+
+        while (!searchQueue.isEmpty()) {
+            BlockPos currentPos =
+                    searchQueue.removeFirst();
+
+            if (!visitedPositions.add(
+                    currentPos
+            )) {
+                continue;
+            }
+
+            BlockEntity blockEntity =
+                    level.getBlockEntity(
+                            currentPos
+                    );
+
+            if (!(blockEntity
+                    instanceof BathBlockEntity currentBath)) {
+                continue;
+            }
+
+            connectedBaths.add(
+                    currentBath
+            );
+
+            for (Direction direction
+                    : HORIZONTAL_DIRECTIONS) {
+                BlockPos adjacentPos =
+                        currentPos
+                                .relative(direction)
+                                .immutable();
+
+                if (visitedPositions.contains(
+                        adjacentPos
+                )) {
+                    continue;
+                }
+
+                BlockEntity adjacentBlockEntity =
+                        level.getBlockEntity(
+                                adjacentPos
+                        );
+
+                if (adjacentBlockEntity
+                        instanceof BathBlockEntity) {
+                    searchQueue.addLast(
+                            adjacentPos
+                    );
+                }
+            }
+        }
+
+        connectedBaths.sort(
+                BATH_POSITION_COMPARATOR
+        );
+
+        return connectedBaths;
+    }
+
+    /**
+     * 接続された浴槽が保持している
+     * お湯の合計量を取得します。
+     */
+    private static int getTotalHotWater(
+            List<BathBlockEntity> connectedBaths
+    ) {
+        int totalHotWater =
+                0;
+
+        for (BathBlockEntity bath
+                : connectedBaths) {
+            totalHotWater +=
+                    bath.hotWaterAmount;
+        }
+
+        return totalHotWater;
+    }
+
+    /**
+     * ネットワーク内の浴槽に隣接するタンクから
+     * お湯を受け取ります。
+     *
+     * 同じタンクが複数の浴槽に接している場合でも、
+     * 1回の処理で1度だけ対象にします。
+     *
+     * @param level             浴槽が存在するLevel
+     * @param connectedBaths    接続された浴槽
+     * @param remainingCapacity ネットワークの空き容量
+     * @return 実際に受け取ったお湯の量
+     */
+    private static int transferFromAdjacentTanks(
+            Level level,
+            List<BathBlockEntity> connectedBaths,
+            int remainingCapacity
     ) {
         int remainingTransfer =
                 Math.min(
                         TRANSFER_AMOUNT_PER_TICK,
-                        getRemainingCapacity()
+                        remainingCapacity
                 );
 
         if (remainingTransfer <= 0) {
-            return false;
+            return 0;
         }
 
-        boolean transferred =
-                false;
+        int transferredAmount =
+                0;
 
-        for (Direction direction
-                : HORIZONTAL_DIRECTIONS) {
-            BlockPos adjacentPos =
-                    bathPos.relative(direction);
+        Set<BlockPos> checkedTankPositions =
+                new HashSet<>();
 
-            BlockEntity adjacentBlockEntity =
-                    level.getBlockEntity(
-                            adjacentPos
-                    );
+        for (BathBlockEntity bath
+                : connectedBaths) {
+            BlockPos bathPos =
+                    bath.getBlockPos();
 
-            if (!(adjacentBlockEntity
-                    instanceof TankBlockEntity tank)) {
-                continue;
+            for (Direction direction
+                    : HORIZONTAL_DIRECTIONS) {
+                BlockPos adjacentPos =
+                        bathPos
+                                .relative(direction)
+                                .immutable();
+
+                /*
+                 * 同じタンクを複数回処理しません。
+                 */
+                if (!checkedTankPositions.add(
+                        adjacentPos
+                )) {
+                    continue;
+                }
+
+                BlockEntity adjacentBlockEntity =
+                        level.getBlockEntity(
+                                adjacentPos
+                        );
+
+                if (!(adjacentBlockEntity
+                        instanceof TankBlockEntity tank)) {
+                    continue;
+                }
+
+                int transferAmount =
+                        Math.min(
+                                remainingTransfer,
+                                tank.getHotWaterAmount()
+                        );
+
+                if (transferAmount <= 0) {
+                    continue;
+                }
+
+                tank.removeHotWater(
+                        transferAmount
+                );
+
+                transferredAmount +=
+                        transferAmount;
+
+                remainingTransfer -=
+                        transferAmount;
+
+                if (remainingTransfer <= 0) {
+                    return transferredAmount;
+                }
             }
+        }
 
-            int transferAmount =
-                    Math.min(
-                            remainingTransfer,
-                            tank.getHotWaterAmount()
-                    );
+        return transferredAmount;
+    }
 
-            if (transferAmount <= 0) {
-                continue;
-            }
+    /**
+     * ネットワーク全体のお湯を、
+     * 接続された各浴槽へ均等に分配します。
+     */
+    private static void distributeHotWater(
+            List<BathBlockEntity> connectedBaths,
+            int totalHotWater
+    ) {
+        if (connectedBaths.isEmpty()) {
+            return;
+        }
+
+        int bathCount =
+                connectedBaths.size();
+
+        int baseAmount =
+                totalHotWater
+                        / bathCount;
+
+        int remainder =
+                totalHotWater
+                        % bathCount;
+
+        for (int index = 0;
+             index < bathCount;
+             index++) {
+            BathBlockEntity bath =
+                    connectedBaths.get(index);
+
+            int targetAmount =
+                    baseAmount;
 
             /*
-             * transferAmountは浴槽の空き容量以下、
-             * かつタンクのお湯量以下に制限済みです。
-             *
-             * TankBlockEntity.removeHotWater()はvoid型なので、
-             * 戻り値は受け取りません。
+             * 割り切れない端数は、
+             * 座標順の先頭から1mBずつ配ります。
              */
-            tank.removeHotWater(
-                    transferAmount
+            if (index < remainder) {
+                targetAmount++;
+            }
+
+            bath.setHotWaterAmount(
+                    targetAmount
             );
-
-            int acceptedAmount =
-                    addHotWater(
-                            transferAmount
-                    );
-
-            remainingTransfer -=
-                    acceptedAmount;
-
-            if (acceptedAmount > 0) {
-                transferred =
-                        true;
-            }
-
-            if (remainingTransfer <= 0) {
-                break;
-            }
         }
-
-        return transferred;
     }
 
     /**
@@ -445,24 +728,41 @@ public class BathBlockEntity extends BlockEntity {
         );
     }
 
+    /**
+     * この浴槽ブロックへ実際に保存されている
+     * お湯の量を取得します。
+     */
     public int getHotWaterAmount() {
         return hotWaterAmount;
     }
 
+    /**
+     * この浴槽ブロック単体の空き容量を取得します。
+     */
     public int getRemainingCapacity() {
         return MAX_HOT_WATER
                 - hotWaterAmount;
     }
 
+    /**
+     * この浴槽ブロック単体が空か確認します。
+     */
     public boolean isEmpty() {
         return hotWaterAmount <= 0;
     }
 
+    /**
+     * この浴槽ブロック単体が満杯か確認します。
+     */
     public boolean isFull() {
         return hotWaterAmount
                 >= MAX_HOT_WATER;
     }
 
+    /**
+     * この浴槽ブロックへ保存する
+     * お湯の量を設定します。
+     */
     public void setHotWaterAmount(
             int amount
     ) {
@@ -482,7 +782,10 @@ public class BathBlockEntity extends BlockEntity {
     }
 
     /**
-     * 浴槽へお湯を追加します。
+     * この浴槽ブロックへお湯を追加します。
+     *
+     * 通常の自動給湯ではネットワーク処理を使用しますが、
+     * 外部連携との互換性のため、このメソッドも維持します。
      *
      * @param amount 追加しようとする量
      * @return 実際に追加できた量
@@ -513,7 +816,7 @@ public class BathBlockEntity extends BlockEntity {
     }
 
     /**
-     * 浴槽からお湯を取り除きます。
+     * この浴槽ブロックからお湯を取り除きます。
      *
      * @param amount 取り除こうとする量
      * @return 実際に取り除いた量
